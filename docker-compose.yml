@@ -1,0 +1,11 @@
+version: '3.9'
+
+services:
+  bobryeye:
+    build: .
+    container_name: bobryeye
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=Europe/Kyiv

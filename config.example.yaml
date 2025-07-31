@@ -1,0 +1,19 @@
+telegram_token: ""
+telegram_chat_id: -123
+
+cameras:
+  - name: "Camera 1"
+    enabled: true
+    rtsp_url: "rtsp://192.168.0.1:554/live/main"
+    threshold_percent: 0.5
+
+
+  - name: "Camera 2"
+    enabled: true
+    rtsp_url: "rtsp://192.168.0.2:554/live/main"
+    threshold_percent: 0.5
+
+  - name: "Camera 3"
+    enabled: true
+    rtsp_url: "rtsp://192.168.0.3:554/live/main"
+    threshold_percent: 0.8
