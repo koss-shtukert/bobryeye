@@ -3,8 +3,6 @@ package watch
 import (
 	"fmt"
 	"image"
-	"image/color"
-	"image/draw"
 	"image/jpeg"
 	"net/http"
 	"os"
@@ -59,17 +57,6 @@ func absDiff(a, b uint32) uint32 {
 	return b - a
 }
 
-func drawRectangle(img draw.Image, rect image.Rectangle, col color.Color) {
-	for x := rect.Min.X; x < rect.Max.X; x++ {
-		img.Set(x, rect.Min.Y, col)
-		img.Set(x, rect.Max.Y-1, col)
-	}
-	for y := rect.Min.Y; y < rect.Max.Y; y++ {
-		img.Set(rect.Min.X, y, col)
-		img.Set(rect.Max.X-1, y, col)
-	}
-}
-
 func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) {
 	if !cfg.Enabled {
 		log.Info().Str("camera", cfg.Name).Msg("Camera is disabled. Skipping.")
@@ -119,19 +106,15 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 				filename := fmt.Sprintf("snapshot_%s_%d.jpg", cfg.Name, time.Now().Unix())
 				path := filepath.Join(os.TempDir(), filename)
 
-				rgba := image.NewRGBA(frame.Bounds())
-				draw.Draw(rgba, frame.Bounds(), frame, image.Point{}, draw.Src)
-				drawRectangle(rgba, bounds, color.RGBA{255, 0, 0, 255})
-
 				f, err := os.Create(path)
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to create snapshot file")
+					log.Error().Err(err).Msg("Failed to create file")
 					continue
 				}
-				err = jpeg.Encode(f, rgba, nil)
+				err = jpeg.Encode(f, frame, nil)
 				f.Close()
 				if err != nil {
-					log.Error().Err(err).Msg("Failed to encode JPEG with rectangle")
+					log.Error().Err(err).Msg("Failed to encode JPEG")
 					continue
 				}
 
