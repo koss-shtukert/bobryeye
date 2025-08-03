@@ -66,7 +66,7 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 	var prevHash *goimagehash.ImageHash
 	var prevImg image.Image
 	var lastMotionTime time.Time
-	const cooldown = 10 * time.Second
+	cooldown := time.Duration(cfg.Cooldown) * time.Second
 
 	for {
 		resp, err := http.Get(cfg.SnapshotURL)

@@ -5,15 +5,18 @@ cameras:
   - name: "Camera 1"
     enabled: true
     snapshot_url: "http://192.168.0.1"
-    threshold_percent: 0.5
+    cooldown: 5
+    threshold_percent: 4.5
 
 
   - name: "Camera 2"
     enabled: true
     snapshot_url: "http://192.168.0.2"
-    threshold_percent: 0.5
+    cooldown: 5
+    threshold_percent: 5.5
 
   - name: "Camera 3"
     enabled: true
     snapshot_url: "http://192.168.0.3"
-    threshold_percent: 0.8
+    cooldown: 5
+    threshold_percent: 2.8
