@@ -2,17 +2,73 @@ package watch
 
 import (
 	"fmt"
-	"github.com/koss-shtukert/bobryeye/config"
-	"github.com/koss-shtukert/bobryeye/telegram"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/corona10/goimagehash"
+	"github.com/koss-shtukert/bobryeye/config"
+	"github.com/koss-shtukert/bobryeye/telegram"
 	"github.com/rs/zerolog"
-	"gocv.io/x/gocv"
 )
+
+func getDiffBounds(img1, img2 image.Image) image.Rectangle {
+	const threshold = 20
+
+	bounds := img1.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r1, g1, b1, _ := img1.At(x, y).RGBA()
+			r2, g2, b2, _ := img2.At(x, y).RGBA()
+
+			if absDiff(r1, r2) > threshold || absDiff(g1, g2) > threshold || absDiff(b1, b2) > threshold {
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	if minX > maxX || minY > maxY {
+		return image.Rect(0, 0, 0, 0)
+	}
+	return image.Rect(minX, minY, maxX+1, maxY+1)
+}
+
+func absDiff(a, b uint32) uint32 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+func drawRectangle(img draw.Image, rect image.Rectangle, col color.Color) {
+	for x := rect.Min.X; x < rect.Max.X; x++ {
+		img.Set(x, rect.Min.Y, col)
+		img.Set(x, rect.Max.Y-1, col)
+	}
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		img.Set(rect.Min.X, y, col)
+		img.Set(rect.Max.X-1, y, col)
+	}
+}
 
 func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) {
 	if !cfg.Enabled {
@@ -20,83 +76,78 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 		return
 	}
 
-	log.Info().Str("camera", cfg.Name).Msg("Starting camera stream")
-
-	webcam, err := gocv.OpenVideoCapture(cfg.RTSP)
-	if err != nil {
-		log.Error().Err(err).Str("camera", cfg.Name).Msg("Failed to open RTSP")
-		return
-	}
-	defer webcam.Close()
-
-	curr := gocv.NewMat()
-	prev := gocv.NewMat()
-	diff := gocv.NewMat()
-	defer curr.Close()
-	defer prev.Close()
-	defer diff.Close()
-
-	if ok := webcam.Read(&prev); !ok || prev.Empty() {
-		log.Error().Str("camera", cfg.Name).Msg("Failed to read initial frame")
-		return
-	}
-	gocv.CvtColor(prev, &prev, gocv.ColorBGRToGray)
-
+	var prevHash *goimagehash.ImageHash
+	var prevImg image.Image
 	var lastMotionTime time.Time
 	const cooldown = 10 * time.Second
 
 	for {
-		if ok := webcam.Read(&curr); !ok || curr.Empty() {
-			time.Sleep(time.Second)
+		resp, err := http.Get(cfg.SnapshotURL)
+		if err != nil {
+			log.Error().Err(err).Str("camera", cfg.Name).Msg("Failed to fetch snapshot")
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		gray := gocv.NewMat()
-		gocv.CvtColor(curr, &gray, gocv.ColorBGRToGray)
-
-		gocv.AbsDiff(gray, prev, &diff)
-		gocv.GaussianBlur(diff, &diff, image.Pt(5, 5), 0, 0, gocv.BorderDefault)
-		gocv.Threshold(diff, &diff, 25, 255, gocv.ThresholdBinary)
-
-		nonZero := gocv.CountNonZero(diff)
-		total := diff.Rows() * diff.Cols()
-		percent := float64(nonZero) / float64(total) * 100.0
-
-		if percent >= cfg.ThresholdPercent {
-			if time.Since(lastMotionTime) < cooldown {
-				continue
-			}
-
-			contours := gocv.FindContours(diff, gocv.RetrievalExternal, gocv.ChainApproxSimple)
-
-			for i := 0; i < contours.Size(); i++ {
-				c := contours.At(i)
-				if gocv.ContourArea(c) < 500 {
-					continue
-				}
-				rect := gocv.BoundingRect(c)
-				gocv.Rectangle(&curr, rect, color.RGBA{255, 0, 0, 0}, 2)
-			}
-
-			log.Info().Str("camera", cfg.Name).Float64("change", percent).Msg("Motion detected")
-
-			filename := fmt.Sprintf("snapshot_%s_%d.jpg", cfg.Name, time.Now().Unix())
-			path := filepath.Join(os.TempDir(), filename)
-
-			if ok := gocv.IMWrite(path, curr); !ok {
-				log.Error().Str("file", path).Msg("Failed to write snapshot")
-				continue
-			}
-
-			if err := bot.SendPhoto(path, fmt.Sprintf("%s: motion detected", cfg.Name)); err != nil {
-				log.Error().Err(err).Str("camera", cfg.Name).Msg("Failed to send photo")
-			} else {
-				lastMotionTime = time.Now()
-			}
-
-			_ = os.Remove(path)
+		frame, err := jpeg.Decode(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Error().Err(err).Str("camera", cfg.Name).Msg("Failed to decode snapshot JPEG")
+			time.Sleep(2 * time.Second)
+			continue
 		}
 
-		gray.CopyTo(&prev)
+		hash, err := goimagehash.DifferenceHash(frame)
+		if err != nil {
+			log.Error().Err(err).Msg("Failed to calculate image hash")
+			continue
+		}
+
+		if prevHash != nil {
+			dist, _ := prevHash.Distance(hash)
+			percent := float64(dist) / 64.0 * 100.0
+
+			bounds := getDiffBounds(prevImg, frame)
+
+			if percent >= cfg.ThresholdPercent && !bounds.Empty() && time.Since(lastMotionTime) > cooldown {
+				log.Info().
+					Str("camera", cfg.Name).
+					Float64("change", percent).
+					Str("hash", fmt.Sprintf("%s", hash.ToString())).
+					Msg("Motion detected")
+
+				filename := fmt.Sprintf("snapshot_%s_%d.jpg", cfg.Name, time.Now().Unix())
+				path := filepath.Join(os.TempDir(), filename)
+
+				rgba := image.NewRGBA(frame.Bounds())
+				draw.Draw(rgba, frame.Bounds(), frame, image.Point{}, draw.Src)
+				drawRectangle(rgba, bounds, color.RGBA{255, 0, 0, 255})
+
+				f, err := os.Create(path)
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to create snapshot file")
+					continue
+				}
+				err = jpeg.Encode(f, rgba, nil)
+				f.Close()
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to encode JPEG with rectangle")
+					continue
+				}
+
+				err = bot.SendPhoto(path, fmt.Sprintf("%s: motion detected", cfg.Name))
+				if err != nil {
+					log.Error().Err(err).Msg("Failed to send photo")
+				} else {
+					lastMotionTime = time.Now()
+				}
+
+				_ = os.Remove(path)
+			}
+		}
+
+		prevHash = hash
+		prevImg = frame
+		time.Sleep(time.Second)
 	}
 }

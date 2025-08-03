@@ -8,7 +8,7 @@ import (
 
 type CameraConfig struct {
 	Name             string  `mapstructure:"name"`
-	RTSP             string  `mapstructure:"rtsp_url"`
+	SnapshotURL      string  `mapstructure:"snapshot_url"`
 	ThresholdPercent float64 `mapstructure:"threshold_percent"`
 	Enabled          bool    `mapstructure:"enabled"`
 }

@@ -1,11 +1,11 @@
 module github.com/koss-shtukert/bobryeye
 
-go 1.22
+go 1.24
 
 require (
+	github.com/corona10/goimagehash v1.1.0
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.20.1
-	gocv.io/x/gocv v0.42.0
 )
 
 require (
@@ -13,6 +13,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
+	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/sagikazarmark/locafero v0.7.0 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
