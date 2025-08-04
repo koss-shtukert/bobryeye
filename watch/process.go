@@ -67,6 +67,7 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 	var prevImg image.Image
 	var lastMotionTime time.Time
 	cooldown := time.Duration(cfg.Cooldown) * time.Second
+	tracker := NewThresholdTracker(10, 1.15)
 
 	for {
 		resp, err := http.Get(cfg.SnapshotURL)
@@ -94,12 +95,19 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 			dist, _ := prevHash.Distance(hash)
 			percent := float64(dist) / 64.0 * 100.0
 
-			bounds := getDiffBounds(prevImg, frame)
+			if percent <= cfg.MinThresholdPercent {
+				continue
+			}
 
-			if percent >= cfg.ThresholdPercent && !bounds.Empty() && time.Since(lastMotionTime) > cooldown {
+			bounds := getDiffBounds(prevImg, frame)
+			dynamicThreshold := tracker.Get(cfg.Name, cfg.ThresholdPercent)
+
+			if percent > dynamicThreshold && !bounds.Empty() && time.Since(lastMotionTime) > cooldown {
 				log.Info().
 					Str("camera", cfg.Name).
 					Float64("change", percent).
+					Float64("threshold", cfg.ThresholdPercent).
+					Float64("dynamicThreshold", dynamicThreshold).
 					Str("hash", fmt.Sprintf("%s", hash.ToString())).
 					Msg("Motion detected")
 
@@ -126,6 +134,7 @@ func Process(cfg config.CameraConfig, bot *telegram.Client, log zerolog.Logger) 
 				}
 
 				_ = os.Remove(path)
+				tracker.Add(cfg.Name, percent)
 			}
 		}
 
